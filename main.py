@@ -3,8 +3,9 @@ from discord.ext import commands
 import random
 import os
 import asyncio
+from aiohttp import web  # Permet de créer le faux site web
 
-# On active toutes les permissions, y compris les statuts pour détecter Roblox
+# Activation des permissions
 intents = discord.Intents.default()
 intents.members = True
 intents.voice_states = True
@@ -13,17 +14,37 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ----------------------------------------------------
-# CONFIGURATION DES IDS (OMERTA)
-# ----------------------------------------------------
+# IDs
 ID_BIENVENUE = 1505275545812860950
 ID_MESSAGES = 1505275843830878289
 ID_ALERTES = 1505278942737731707
 ID_COMMANDES = 1505279169079152721
-ROLE_SQUAD_ID = 1505275200000000000  # Remplace par ton ID de rôle si tu en as créé un
+ROLE_SQUAD_ID = 1505275200000000000
 
+# ==========================================
+# LE LEURRE POUR RENDER (Faux site web)
+# ==========================================
+async def handle_web(request):
+    return web.Response(text="Le Bot OMERTA est en ligne et surveille la zone.")
+
+async def web_server():
+    app = web.Application()
+    app.add_routes([web.get('/', handle_web)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Faux serveur web démarré sur le port {port} pour satisfaire Render.")
+
+# ==========================================
+# DÉMARRAGE DU BOT
+# ==========================================
 @bot.event
 async def on_ready():
+    # Lancement du faux site web en parallèle
+    bot.loop.create_task(web_server())
+    
     await bot.change_presence(activity=discord.Game(name="Protéger la Squad"))
     print("---------------------------------")
     print(f"🔥 L'OMERTA EST EN PLACE ! {bot.user.name} est connecté.")
@@ -34,15 +55,11 @@ async def on_ready():
 # ==========================================
 @bot.event
 async def on_member_join(member):
-    # Rôle automatique
     role = member.guild.get_role(ROLE_SQUAD_ID)
     if role:
-        try:
-            await member.add_roles(role)
-        except:
-            pass
+        try: await member.add_roles(role)
+        except: pass
 
-    # Message de bienvenue
     salon_bienvenue = bot.get_channel(ID_BIENVENUE)
     if salon_bienvenue:
         messages_bienvenue = [
@@ -57,7 +74,6 @@ async def on_member_join(member):
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 5):
-    """Efface les derniers messages (ex: !clear 10)"""
     await ctx.channel.purge(limit=amount + 1)
     msg = await ctx.send(f"🧹 **{amount} messages** ont été balayés par l'OMERTA.")
     await asyncio.sleep(3)
@@ -68,7 +84,6 @@ async def clear(ctx, amount: int = 5):
 # ==========================================
 @bot.event
 async def on_voice_state_update(member, before, after):
-    # Radar vocal : alerte quand quelqu'un attend seul
     if before.channel is None and after.channel is not None:
         if len(after.channel.members) == 1:
             salon_alertes = bot.get_channel(ID_ALERTES)
@@ -77,7 +92,6 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_presence_update(before, after):
-    # Détection d'activité Gaming (Ex: Roblox)
     if not before.activity and after.activity:
         if after.activity.name and after.activity.name.lower() == "roblox":
             salon_qg = bot.get_channel(ID_MESSAGES)
@@ -86,7 +100,6 @@ async def on_presence_update(before, after):
 
 @bot.command()
 async def squad(ctx):
-    """Appel aux armes pour organiser une session instantanée"""
     await ctx.send(f"⚠️ **RassembleMENT OMERTA !** @everyone {ctx.author.mention} veut lancer une session maintenant ! Ramenez-vous en vocal !")
 
 # ==========================================
@@ -94,38 +107,22 @@ async def squad(ctx):
 # ==========================================
 @bot.command()
 async def food(ctx):
-    """Le décideur de menu quand personne ne sait quoi commander"""
-    plats = [
-        "un bon Tacos bien lourd", 
-        "un gros Burger", 
-        "une Pizza au thon"
-    ]
+    plats = ["un bon Tacos bien lourd", "un gros Burger", "une Pizza au thon"]
     boissons = ["un Coca bien frais 🥤", "un Fanta 🍊", "une Boga 🍏"]
-    
-    choix_plat = random.choice(plats)
-    choix_boisson = random.choice(boissons)
-    
-    await ctx.send(f"🍔 **Le boss ne sait pas quoi manger ?**\nCe soir l'OMERTA a tranché : **{choix_plat}**, (évidemment sans tomates, sans laitue et sans laitage) ! Et pour faire passer ça, **{choix_boisson}**.")
+    await ctx.send(f"🍔 **Le boss ne sait pas quoi manger ?**\nCe soir l'OMERTA a tranché : **{random.choice(plats)}**, (évidemment sans tomates, sans laitue et sans laitage) ! Et pour faire passer ça, **{random.choice(boissons)}**.")
 
 @bot.command()
 async def pileouface(ctx):
-    """Pour régler les choix difficiles"""
-    resultat = random.choice(["🪙 **Pile !**", "🪙 **Face !**"])
-    await ctx.send(resultat)
+    await ctx.send(random.choice(["🪙 **Pile !**", "🪙 **Face !**"]))
 
 @bot.command()
 async def des(ctx):
-    """Lance de dé à 6 faces"""
     await ctx.send(f"🎲 Le dé roule et s'arrête sur le... **{random.randint(1, 6)}** !")
 
 @bot.command()
 async def remind(ctx, minutes: int, *, message):
-    """Système de rappels (ex: !remind 10 aller manger)"""
     await ctx.send(f"⏰ C'est noté. Je te rappelle dans **{minutes} minutes** !")
     await asyncio.sleep(minutes * 60)
     await ctx.send(f"🔔 **RAPPEL pour {ctx.author.mention} :** {message}")
 
-# ==========================================
-# DÉMARRAGE DU BOT
-# ==========================================
 bot.run(os.environ.get('DISCORD_TOKEN'))
