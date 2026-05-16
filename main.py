@@ -84,4 +84,4 @@ async def setup(ctx):\
     await ctx.send("\uc0\u9989  Boss, les messages de pr\'e9sentation ont \'e9t\'e9 envoy\'e9s dans tous les salons !")\
 \
 # Lancement du bot\
-bot.run('MTUwNTI4MTc2NjYxOTg3MzMwMQ.GdJx5Y.frZqO31jbeAgRwNsRgu4yIUWVnXbRnSKA7FHj0')}
+bot.run('DISCORD_TOKEN')}
