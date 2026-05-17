@@ -6,7 +6,7 @@ import asyncio
 import datetime
 from aiohttp import web
 
-# Activation des permissions
+# Activation des permissions (y compris les statuts pour les jeux)
 intents = discord.Intents.default()
 intents.members = True
 intents.voice_states = True
@@ -43,7 +43,7 @@ async def web_server():
 # ==========================================
 @bot.event
 async def on_ready():
-    bot.loop.create_task(web_server()) # Lance le faux site
+    bot.loop.create_task(web_server()) # Lance le faux site pour Render
     check_anniversaires.start()        # Lance le radar d'anniversaires
     await bot.change_presence(activity=discord.Game(name="Protéger la Squad"))
     print("---------------------------------")
@@ -76,7 +76,7 @@ async def clear(ctx, amount: int = 5):
     await msg.delete()
 
 # ==========================================
-# 2. GAMING & VOCAL
+# 2. GAMING & VOCAL (MULTI-JEUX)
 # ==========================================
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -89,10 +89,26 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_presence_update(before, after):
     if not before.activity and after.activity:
-        if after.activity.name and after.activity.name.lower() == "roblox":
-            salon = bot.get_channel(ID_MESSAGES)
-            if salon:
-                await salon.send(f"🎮 **Alerte :** {after.mention} vient de lancer Roblox ! Rejoignez-le !")
+        if after.activity.name:
+            jeu = after.activity.name.lower()
+            
+            # Liste des jeux surveillés par l'OMERTA
+            jeux_de_la_squad = [
+                "roblox", 
+                "8 ball pool", 
+                "fc 26", 
+                "ea sports fc 26", 
+                "gta v", 
+                "grand theft auto v", 
+                "minecraft", 
+                "fortnite", 
+                "supermarket together"
+            ]
+            
+            if jeu in jeux_de_la_squad:
+                salon = bot.get_channel(ID_MESSAGES)
+                if salon:
+                    await salon.send(f"🎮 **Alerte Gaming :** {after.mention} vient de lancer **{after.activity.name}** ! Rejoignez-le !")
 
 @bot.command()
 async def squad(ctx):
@@ -100,7 +116,7 @@ async def squad(ctx):
     await ctx.send(f"⚠️ **RassembleMENT OMERTA !** @everyone {ctx.author.mention} veut lancer une session maintenant !")
 
 # ==========================================
-# 3. SONDAGES (NOUVEAU)
+# 3. SONDAGES
 # ==========================================
 @bot.command()
 async def sondage(ctx, *, question):
@@ -108,15 +124,14 @@ async def sondage(ctx, *, question):
     embed = discord.Embed(title="📊 Sondage OMERTA", description=question, color=0x2b2d31)
     embed.set_footer(text=f"Sondage lancé par {ctx.author.display_name}")
     
-    await ctx.message.delete() # Efface le message de commande
+    await ctx.message.delete()
     msg = await ctx.send(embed=embed)
     
-    # Ajoute les réactions de vote
     await msg.add_reaction("✅")
     await msg.add_reaction("❌")
 
 # ==========================================
-# 4. ANNIVERSAIRES (NOUVEAU)
+# 4. ANNIVERSAIRES
 # ==========================================
 @bot.command()
 async def setanniv(ctx, date: str):
@@ -150,7 +165,6 @@ async def check_anniversaires():
 @check_anniversaires.before_loop
 async def before_check():
     await bot.wait_until_ready()
-    # Calcul pour synchroniser la boucle à minuit pile (heure locale)
     tz = datetime.timezone(datetime.timedelta(hours=1))
     now = datetime.datetime.now(tz)
     futur = now.replace(hour=0, minute=0, second=0, microsecond=0)
