@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import random
 import os
 import asyncio
-from aiohttp import web  # Permet de créer le faux site web
+import datetime
+from aiohttp import web
 
 # Activation des permissions
 intents = discord.Intents.default()
@@ -14,19 +15,20 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# IDs
+# IDs de l'OMERTA
 ID_BIENVENUE = 1505275545812860950
 ID_MESSAGES = 1505275843830878289
 ID_ALERTES = 1505278942737731707
 ID_COMMANDES = 1505279169079152721
-ROLE_SQUAD_ID = 1505275200000000000
+
+# Dictionnaire pour stocker les anniversaires (Format: {ID: "JJ/MM"})
+anniversaires = {}
 
 # ==========================================
-# LE LEURRE POUR RENDER (Faux site web)
+# LE LEURRE POUR RENDER (Anti-Crash)
 # ==========================================
 async def handle_web(request):
-    return web.Response(text="Le Bot OMERTA est en ligne et surveille la zone.")
-
+    return web.Response(text="L'OMERTA tourne H24.")
 async def web_server():
     app = web.Application()
     app.add_routes([web.get('/', handle_web)])
@@ -35,81 +37,136 @@ async def web_server():
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"🌐 Faux serveur web démarré sur le port {port} pour satisfaire Render.")
 
 # ==========================================
 # DÉMARRAGE DU BOT
 # ==========================================
 @bot.event
 async def on_ready():
-    # Lancement du faux site web en parallèle
-    bot.loop.create_task(web_server())
-    
+    bot.loop.create_task(web_server()) # Lance le faux site
+    check_anniversaires.start()        # Lance le radar d'anniversaires
     await bot.change_presence(activity=discord.Game(name="Protéger la Squad"))
     print("---------------------------------")
     print(f"🔥 L'OMERTA EST EN PLACE ! {bot.user.name} est connecté.")
     print("---------------------------------")
 
 # ==========================================
-# 1. ACCUEIL ET GESTION DE BASE
+# 1. ACCUEIL ET GESTION
 # ==========================================
 @bot.event
 async def on_member_join(member):
-    role = member.guild.get_role(ROLE_SQUAD_ID)
-    if role:
-        try: await member.add_roles(role)
-        except: pass
-
     salon_bienvenue = bot.get_channel(ID_BIENVENUE)
     if salon_bienvenue:
-        messages_bienvenue = [
+        msgs = [
             f"{member.mention} ce gros charo est arrivé.",
             f"Merde, {member.mention} est là.",
             f"{member.mention} EST LA🔥.",
             f"{member.mention} est là (allo selem il est pas sélectionné).",
             f"Yo le frro {member.mention}"
         ]
-        await salon_bienvenue.send(random.choice(messages_bienvenue))
+        await salon_bienvenue.send(random.choice(msgs))
 
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 5):
+    """Efface les messages (ex: !clear 10)"""
     await ctx.channel.purge(limit=amount + 1)
     msg = await ctx.send(f"🧹 **{amount} messages** ont été balayés par l'OMERTA.")
     await asyncio.sleep(3)
     await msg.delete()
 
 # ==========================================
-# 2. EXPÉRIENCE VOCALE ET GAMING
+# 2. GAMING & VOCAL
 # ==========================================
 @bot.event
 async def on_voice_state_update(member, before, after):
     if before.channel is None and after.channel is not None:
         if len(after.channel.members) == 1:
-            salon_alertes = bot.get_channel(ID_ALERTES)
-            if salon_alertes:
-                await salon_alertes.send(f"🚨 {member.mention} t'attend en vocal dans **{after.channel.name}** !")
+            salon = bot.get_channel(ID_ALERTES)
+            if salon:
+                await salon.send(f"🚨 {member.mention} t'attend en vocal dans **{after.channel.name}** !")
 
 @bot.event
 async def on_presence_update(before, after):
     if not before.activity and after.activity:
         if after.activity.name and after.activity.name.lower() == "roblox":
-            salon_qg = bot.get_channel(ID_MESSAGES)
-            if salon_qg:
-                await salon_qg.send(f"🎮 **Alerte Gaming :** {after.mention} vient de lancer Roblox ! Rejoignez-le !")
+            salon = bot.get_channel(ID_MESSAGES)
+            if salon:
+                await salon.send(f"🎮 **Alerte :** {after.mention} vient de lancer Roblox ! Rejoignez-le !")
 
 @bot.command()
 async def squad(ctx):
-    await ctx.send(f"⚠️ **RassembleMENT OMERTA !** @everyone {ctx.author.mention} veut lancer une session maintenant ! Ramenez-vous en vocal !")
+    """Appel aux armes général"""
+    await ctx.send(f"⚠️ **RassembleMENT OMERTA !** @everyone {ctx.author.mention} veut lancer une session maintenant !")
 
 # ==========================================
-# 3. COMMANDES DÉLIRE ET UTILITAIRES
+# 3. SONDAGES (NOUVEAU)
+# ==========================================
+@bot.command()
+async def sondage(ctx, *, question):
+    """Crée un sondage stylé (ex: !sondage On lance un tournoi ?)"""
+    embed = discord.Embed(title="📊 Sondage OMERTA", description=question, color=0x2b2d31)
+    embed.set_footer(text=f"Sondage lancé par {ctx.author.display_name}")
+    
+    await ctx.message.delete() # Efface le message de commande
+    msg = await ctx.send(embed=embed)
+    
+    # Ajoute les réactions de vote
+    await msg.add_reaction("✅")
+    await msg.add_reaction("❌")
+
+# ==========================================
+# 4. ANNIVERSAIRES (NOUVEAU)
+# ==========================================
+@bot.command()
+async def setanniv(ctx, date: str):
+    """Enregistre ton anniversaire (ex: !setanniv 15/04)"""
+    try:
+        jour, mois = date.split("/")
+        if 1 <= int(jour) <= 31 and 1 <= int(mois) <= 12:
+            anniversaires[ctx.author.id] = f"{int(jour):02d}/{int(mois):02d}"
+            await ctx.send(f"🎂 C'est noté boss ! L'OMERTA n'oubliera pas ton anniv le **{anniversaires[ctx.author.id]}**.")
+        else:
+            await ctx.send("❌ Date invalide. Utilise `!setanniv JJ/MM` (ex: 15/04).")
+    except:
+        await ctx.send("❌ Format invalide. Utilise `!setanniv JJ/MM` (ex: 15/04).")
+
+@tasks.loop(hours=24)
+async def check_anniversaires():
+    # Fuseau horaire UTC+1 (Heure de Tunis)
+    tz = datetime.timezone(datetime.timedelta(hours=1))
+    now = datetime.datetime.now(tz)
+    date_jour = f"{now.day:02d}/{now.month:02d}"
+    
+    salon_qg = bot.get_channel(ID_MESSAGES)
+    if not salon_qg: return
+    
+    for user_id, date_anniv in anniversaires.items():
+        if date_anniv == date_jour:
+            user = bot.get_user(user_id)
+            if user:
+                await salon_qg.send(f"🎉 **ALERTE GÉNÉRALE !** 🎉\nAujourd'hui c'est l'anniversaire de {user.mention} ! La squad, faites du bruit !")
+
+@check_anniversaires.before_loop
+async def before_check():
+    await bot.wait_until_ready()
+    # Calcul pour synchroniser la boucle à minuit pile (heure locale)
+    tz = datetime.timezone(datetime.timedelta(hours=1))
+    now = datetime.datetime.now(tz)
+    futur = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if now >= futur:
+        futur += datetime.timedelta(days=1)
+    attente = (futur - now).total_seconds()
+    await asyncio.sleep(attente)
+
+# ==========================================
+# 5. DÉLIRES & UTILITAIRES
 # ==========================================
 @bot.command()
 async def food(ctx):
     plats = ["un bon Tacos bien lourd", "un gros Burger", "une Pizza au thon"]
     boissons = ["un Coca bien frais 🥤", "un Fanta 🍊", "une Boga 🍏"]
-    await ctx.send(f"🍔 **Le boss ne sait pas quoi manger ?**\nCe soir l'OMERTA a tranché : **{random.choice(plats)}**, (évidemment sans tomates, sans laitue et sans laitage) ! Et pour faire passer ça, **{random.choice(boissons)}**.")
+    await ctx.send(f"🍔 **Le boss ne sait pas quoi manger ?**\nCe soir l'OMERTA a tranché : **{random.choice(plats)}**, (sans tomates, sans laitue et sans laitage) ! Et pour faire passer ça, **{random.choice(boissons)}**.")
 
 @bot.command()
 async def pileouface(ctx):
